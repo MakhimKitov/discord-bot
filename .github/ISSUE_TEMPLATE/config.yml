@@ -1,0 +1,3 @@
+# Force every issue through the template — no blank issues.
+# (The monitor files `auto` issues via the API, not this form.)
+blank_issues_enabled: false

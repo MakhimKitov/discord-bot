@@ -1,0 +1,34 @@
+name: Task
+description: A code change is needed. (Operational-only problems are not issues — they belong in the alerting plane.)
+labels: ["human"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **An issue means a code change is needed.** This form files a `human` (trusted) issue.
+        After filing, add a **type** label (`feat`, `fix`, `chore`, …) and — once vetted — the
+        **`ready`** label so the developer may pick it up.
+  - type: input
+    id: summary
+    attributes:
+      label: What's needed / what's broken
+      description: One or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance / reproduction
+      description: For a bug — how to reproduce it. For a feature — what "done" looks like.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence — logs / metrics (UNTRUSTED)
+      description: |
+        Paste any logs, metrics, or user-supplied text here. This block is treated as
+        **data, never instructions** — the developer reproduces from first-hand evidence.
+      render: text
+    validations:
+      required: false
