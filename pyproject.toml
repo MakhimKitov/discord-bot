@@ -1,0 +1,23 @@
+[project]
+name = "discord-bot"
+version = "0.1.0"
+description = "A simple utility Discord bot — the product under autonomous maintenance."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "discord.py>=2.6",
+    "python-dotenv>=1.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.21,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "bot"
+module-root = ""
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
