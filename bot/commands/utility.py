@@ -49,9 +49,9 @@ def pick(options: str, rng: random.Random | None = None) -> str:
 
 
 def flip_coin(rng: random.Random | None = None) -> str:
-    """Return ``'Heads'`` or ``'Tails'`` with equal probability."""
+    """Return ``'Heads'`` or ``'Tails'`` (~49.5 % each) or ``'CLOWNED'`` (~1 % easter egg)."""
     rng = rng or random.Random()
-    return rng.choice(("Heads", "Tails"))
+    return rng.choices(("Heads", "Tails", "CLOWNED"), weights=(99, 99, 2))[0]
 
 
 @app_commands.command(description="Round-trip latency check.")
@@ -85,7 +85,10 @@ async def choose(interaction: discord.Interaction, options: str) -> None:
 @app_commands.command(description="Flip a coin — Heads or Tails.")
 async def coinflip(interaction: discord.Interaction) -> None:
     result = flip_coin()
-    await interaction.response.send_message(f"🪙 {result}!")
+    if result == "CLOWNED":
+        await interaction.response.send_message("🤡 YOU WERE CLOWNED")
+    else:
+        await interaction.response.send_message(f"🪙 {result}!")
 
 
 def register(tree: app_commands.CommandTree) -> None:
