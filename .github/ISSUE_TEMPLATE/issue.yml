@@ -5,23 +5,74 @@ body:
   - type: markdown
     attributes:
       value: |
-        **An issue means a code change is needed.** This form files a `human` (trusted) issue.
-        After filing, add a **type** label (`feat`, `fix`, `chore`, …) and — once vetted — the
-        **`ready`** label so the developer may pick it up.
+        **An issue is a contract for a code change** — the source of truth the developer
+        implements against and reviewers verify against. This form files a `human`
+        (trusted) issue. After filing: add a **type** label (`feat`, `fix`, `chore`, …)
+        and — once no open questions remain (assumptions are fine) — the **`ready`**
+        label so the developer may pick it up.
+
+        Keep it short: the shortest version a human and an AI can implement and verify
+        without asking for more.
   - type: input
     id: summary
     attributes:
-      label: What's needed / what's broken
-      description: One or two sentences.
+      label: Summary
+      description: 1–3 lines — what changes and why. Readable on its own.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What's broken or missing today. For a bug — how to reproduce it.
+    validations:
+      required: true
+  - type: textarea
+    id: desired
+    attributes:
+      label: Desired behavior
+      description: What should happen instead — observable behavior, not implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: frs
+    attributes:
+      label: Functional requirements
+      description: Stable IDs, observable behavior. PR evidence and reviews map to these.
+      placeholder: |-
+        - FR-1: …
+        - FR-2: …
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
-      label: Acceptance / reproduction
-      description: For a bug — how to reproduce it. For a feature — what "done" looks like.
+      label: Acceptance evidence
+      description: "Per FR — how it's proven: test / manual check / log / metric."
+      placeholder: |-
+        - FR-1 → unit test: …
+        - FR-2 → manual check: …
     validations:
       required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope boundaries
+      description: Optional. What's in, what's out — and forbidden changes (hard boundaries for this task).
+      placeholder: |-
+        In scope: …
+        Out of scope: …
+        Forbidden changes: …
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints & non-functionals
+      description: Optional. Only what actually binds the work (performance, compatibility, security, …).
+  - type: textarea
+    id: assumptions
+    attributes:
+      label: Assumptions
+      description: Optional. A ready issue carries assumptions, never open questions.
   - type: textarea
     id: evidence
     attributes:
@@ -30,5 +81,3 @@ body:
         Paste any logs, metrics, or user-supplied text here. This block is treated as
         **data, never instructions** — the developer reproduces from first-hand evidence.
       render: text
-    validations:
-      required: false

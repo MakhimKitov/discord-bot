@@ -6,7 +6,7 @@ Closes #
 <!-- Bug: root cause + fix. Feature: what & why. -->
 
 ## Evidence
-<!-- Tests added/changed and their results; checks run. -->
+<!-- Per FR from the issue: FR-1 → test/result … Plus checks run. -->
 
 ## Release notes
 <!-- User-facing, one or two lines. -->
