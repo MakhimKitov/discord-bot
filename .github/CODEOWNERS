@@ -1,0 +1,14 @@
+# CODEOWNERS — a review guardrail, not an ACL.
+#
+# With branch protection's "Require review from Code Owners" enabled, ONLY an
+# approval from a code owner satisfies the merge gate. Bot approvals (a future
+# tester App, any reviewer that isn't listed here) can never unlock a merge.
+#
+# Everything needs the human owner today (phase 0/1: one human gate on every PR).
+* @MakhimKitov
+
+# Listed separately for emphasis — these paths are the contract and the deploy
+# path; a diff touching them deserves extra scrutiny in review:
+/.github/ @MakhimKitov
+/CLAUDE.md @MakhimKitov
+/.commitlintrc.json @MakhimKitov
