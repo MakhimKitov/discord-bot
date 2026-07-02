@@ -33,6 +33,12 @@ Every change is reviewed before merge: you self-review with **Codex** before ope
 PR, **GitHub Copilot** reviews the opened PR, and the **human owner** gives the final
 approval and merge. Address review findings; never merge your own work.
 
+After pushing changes to an open PR (a review round), **re-request review from both
+Copilot and the owner** — automatic reviews fire only on PR open, not on later pushes:
+
+    gh api repos/{owner}/{repo}/pulls/<n>/requested_reviewers \
+      -X POST -F 'reviewers[]=copilot-pull-request-reviewer[bot]' -F 'reviewers[]=<owner>'
+
 ## What lives here vs. not
 
 - **Here (product repo):** bot source (`bot/`), the bot's PRDs and specs (`specs/`),
