@@ -1,19 +1,22 @@
-"""Utility slash commands: /ping, /roll, /choose.
+"""Utility slash commands: /ping, /roll, /choose, /coinflip, /casino.
 
-Command logic lives in pure functions (parse_dice, roll_dice, pick) so it is
-unit-testable without a Discord connection; the decorated coroutines are thin
-interaction wrappers.
+Command logic lives in pure functions (parse_dice, roll_dice, pick, flip_coin,
+spin_reels) so it is unit-testable without a Discord connection; the decorated
+coroutines are thin interaction wrappers.
 """
 
 from __future__ import annotations
 
 import random
+from collections import Counter
 
 import discord
 from discord import app_commands
 
 MAX_COUNT = 100
 MAX_SIDES = 1000
+
+CASINO_SYMBOLS = ("🍒", "🍋", "🔔", "⭐", "💎")
 
 
 def parse_dice(spec: str) -> tuple[int, int]:
@@ -54,6 +57,42 @@ def flip_coin(rng: random.Random | None = None) -> str:
     return rng.choices(("Heads", "Tails", "CLOWNED"), weights=(99, 99, 2))[0]
 
 
+def spin_reels(rng: random.Random | None = None) -> tuple[str, str, str]:
+    """Draw three reel symbols, independently and uniformly, from CASINO_SYMBOLS."""
+    rng = rng or random.Random()
+    return (
+        rng.choice(CASINO_SYMBOLS),
+        rng.choice(CASINO_SYMBOLS),
+        rng.choice(CASINO_SYMBOLS),
+    )
+
+
+def casino_outcome(reels: tuple[str, str, str]) -> str:
+    """Classify a spin as ``'jackpot'`` (3 of a kind), ``'small win'`` (2 of a
+    kind), or ``'bust'`` (all different)."""
+    counts = Counter(reels)
+    top = counts.most_common(1)[0][1]
+    if top == 3:
+        return "jackpot"
+    if top == 2:
+        return "small win"
+    return "bust"
+
+
+_CASINO_OUTCOME_TEXT = {
+    "jackpot": "JACKPOT! 🎉",
+    "small win": "small win!",
+    "bust": "bust.",
+}
+
+
+def format_casino_reply(reels: tuple[str, str, str]) -> str:
+    """Render the three reels plus the outcome tier's distinct response text."""
+    outcome = casino_outcome(reels)
+    reel_display = f"{reels[0]} | {reels[1]} | {reels[2]}"
+    return f"🎰 {reel_display} — {_CASINO_OUTCOME_TEXT[outcome]}"
+
+
 @app_commands.command(description="Round-trip latency check.")
 async def ping(interaction: discord.Interaction) -> None:
     latency_ms = round(interaction.client.latency * 1000)
@@ -91,8 +130,15 @@ async def coinflip(interaction: discord.Interaction) -> None:
         await interaction.response.send_message(f"🪙 {result}!")
 
 
+@app_commands.command(description="Spin the one-armed bandit — three reels, one outcome.")
+async def casino(interaction: discord.Interaction) -> None:
+    reels = spin_reels()
+    await interaction.response.send_message(format_casino_reply(reels))
+
+
 def register(tree: app_commands.CommandTree) -> None:
     tree.add_command(ping)
     tree.add_command(roll)
     tree.add_command(choose)
     tree.add_command(coinflip)
+    tree.add_command(casino)
