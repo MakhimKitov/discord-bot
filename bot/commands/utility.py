@@ -8,13 +8,16 @@ coroutines are thin interaction wrappers.
 from __future__ import annotations
 
 import random
+import re
 from collections import Counter
 
 import discord
 from discord import app_commands
 
-MAX_COUNT = 100
+MAX_COUNT = 20
 MAX_SIDES = 1000
+
+_DICE_RE = re.compile(r"(\d+)d(\d+)", re.IGNORECASE)
 
 CASINO_SYMBOLS = ("🍒", "🍋", "🔔", "⭐", "💎")
 # Fixed draw weights, strictly descending from most to least common — 🍒 is the
@@ -24,26 +27,41 @@ CASINO_WEIGHTS = (50, 25, 13, 7, 5)
 
 
 def parse_dice(spec: str) -> tuple[int, int]:
-    """Parse ``NdM`` notation (``2d6``, ``d20``) into (count, sides)."""
-    raw = spec.strip().lower()
-    count_part, sep, sides_part = raw.partition("d")
-    if not sep:
-        raise ValueError(f"can't read {spec!r} — use NdM, like 2d6")
-    try:
-        count = int(count_part) if count_part else 1
-        sides = int(sides_part)
-    except ValueError:
-        raise ValueError(f"can't read {spec!r} — use NdM, like 2d6") from None
+    """Parse strict ``NdM`` notation (e.g. ``2d6``) into (count, sides).
+
+    Both ``N`` and ``M`` must be present as digit runs — there's no positional
+    default for an omitted count (``d20`` is rejected, not read as ``1d20``);
+    the ``/roll`` command's own default (``1d6``) only applies when the whole
+    option is omitted. ``d`` is case-insensitive and surrounding whitespace is
+    tolerated.
+    """
+    raw = spec.strip()
+    match = _DICE_RE.fullmatch(raw)
+    if not match:
+        raise ValueError(
+            f"can't read {spec!r} — use NdM, like 2d6 "
+            f"(1–{MAX_COUNT} dice, 2–{MAX_SIDES} sides)"
+        )
+    count, sides = int(match.group(1)), int(match.group(2))
     if not 1 <= count <= MAX_COUNT:
-        raise ValueError(f"count must be 1–{MAX_COUNT}")
+        raise ValueError(f"count must be 1–{MAX_COUNT} (got {count}) — example: 2d6")
     if not 2 <= sides <= MAX_SIDES:
-        raise ValueError(f"sides must be 2–{MAX_SIDES}")
+        raise ValueError(f"sides must be 2–{MAX_SIDES} (got {sides}) — example: 2d6")
     return count, sides
 
 
 def roll_dice(count: int, sides: int, rng: random.Random | None = None) -> list[int]:
     rng = rng or random.Random()
     return [rng.randint(1, sides) for _ in range(count)]
+
+
+def format_roll_reply(count: int, sides: int, rolls: list[int]) -> str:
+    """Render the individual rolls and, for more than one die, the total —
+    ``🎲 2d6 → 4 + 6 = 10`` or, for a single die, ``🎲 1d6 → 5``."""
+    detail = " + ".join(str(r) for r in rolls)
+    if len(rolls) == 1:
+        return f"🎲 {count}d{sides} → {detail}"
+    return f"🎲 {count}d{sides} → {detail} = {sum(rolls)}"
 
 
 def pick(options: str, rng: random.Random | None = None) -> str:
@@ -109,8 +127,7 @@ async def roll(interaction: discord.Interaction, dice: str = "1d6") -> None:
         await interaction.response.send_message(str(exc), ephemeral=True)
         return
     rolls = roll_dice(count, sides)
-    detail = " + ".join(str(r) for r in rolls)
-    await interaction.response.send_message(f"🎲 {dice.strip()}: {detail} = **{sum(rolls)}**")
+    await interaction.response.send_message(format_roll_reply(count, sides, rolls))
 
 
 @app_commands.command(description="Pick one option from a comma-separated list.")
