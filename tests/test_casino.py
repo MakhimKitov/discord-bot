@@ -1,18 +1,36 @@
 """Casino (one-armed bandit) logic — pure functions, no Discord."""
 
 import random
+from collections import Counter
 
 from bot.commands.utility import (
     CASINO_SYMBOLS,
+    CASINO_WEIGHTS,
     casino_outcome,
     format_casino_reply,
     spin_reels,
 )
 
-# Known seeds covering all three outcome tiers.
-_SMALL_WIN_SEED = 0  # ('⭐', '⭐', '🍒')
-_BUST_SEED = 1  # ('🍋', '💎', '🍒')
-_JACKPOT_SEED = 2  # ('🍒', '🍒', '🍒')
+# Known seeds covering all three outcome tiers (weighted draws — see #5).
+_SMALL_WIN_SEED = 0  # ('🔔', '🔔', '🍒')
+_BUST_SEED = 2  # ('💎', '⭐', '🍒')
+_JACKPOT_SEED = 4  # ('🍒', '🍒', '🍒')
+
+
+def test_weights_are_strictly_descending():
+    """FR-1: common symbols must be strictly more likely than rarer ones."""
+    assert len(CASINO_WEIGHTS) == len(CASINO_SYMBOLS)
+    assert all(a > b for a, b in zip(CASINO_WEIGHTS, CASINO_WEIGHTS[1:]))
+
+
+def test_common_symbol_drawn_strictly_more_than_rare_symbol():
+    """FR-1: over many spins, the most common symbol beats the rarest one."""
+    most_common_symbol = CASINO_SYMBOLS[0]
+    rarest_symbol = CASINO_SYMBOLS[-1]
+    counts = Counter()
+    for seed in range(2000):
+        counts.update(spin_reels(random.Random(seed)))
+    assert counts[most_common_symbol] > counts[rarest_symbol]
 
 
 def test_every_symbol_reachable_on_every_reel():

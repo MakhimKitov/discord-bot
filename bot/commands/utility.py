@@ -17,6 +17,10 @@ MAX_COUNT = 100
 MAX_SIDES = 1000
 
 CASINO_SYMBOLS = ("🍒", "🍋", "🔔", "⭐", "💎")
+# Fixed draw weights, strictly descending from most to least common — 🍒 is the
+# workhorse symbol, 💎 is the rare jackpot symbol. Values are the dev's choice
+# per #5; only the strictly-descending ordering is load-bearing.
+CASINO_WEIGHTS = (50, 25, 13, 7, 5)
 
 
 def parse_dice(spec: str) -> tuple[int, int]:
@@ -58,13 +62,11 @@ def flip_coin(rng: random.Random | None = None) -> str:
 
 
 def spin_reels(rng: random.Random | None = None) -> tuple[str, str, str]:
-    """Draw three reel symbols, independently and uniformly, from CASINO_SYMBOLS."""
+    """Draw three reel symbols, independently, weighted by CASINO_WEIGHTS —
+    common symbols (🍒) dominate, rare ones (💎) show up seldom."""
     rng = rng or random.Random()
-    return (
-        rng.choice(CASINO_SYMBOLS),
-        rng.choice(CASINO_SYMBOLS),
-        rng.choice(CASINO_SYMBOLS),
-    )
+    symbol1, symbol2, symbol3 = rng.choices(CASINO_SYMBOLS, weights=CASINO_WEIGHTS, k=3)
+    return (symbol1, symbol2, symbol3)
 
 
 def casino_outcome(reels: tuple[str, str, str]) -> str:
