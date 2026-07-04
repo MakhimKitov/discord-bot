@@ -1,8 +1,8 @@
-"""Utility slash commands: /ping, /roll, /choose, /coinflip, /casino.
+"""Utility slash commands: /ping, /roll, /choose, /coinflip, /casino, /rps.
 
 Command logic lives in pure functions (parse_dice, roll_dice, parse_weighted_option,
-pick, flip_coin, spin_reels) so it is unit-testable without a Discord connection; the
-decorated coroutines are thin interaction wrappers.
+pick, flip_coin, spin_reels, rps_outcome) so it is unit-testable without a Discord
+connection; the decorated coroutines are thin interaction wrappers.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import random
 import re
 from collections import Counter
+from typing import Literal
 
 import discord
 from discord import app_commands
@@ -147,6 +148,45 @@ def format_casino_reply(reels: tuple[str, str, str]) -> str:
     return f"🎰 {reel_display} — {_CASINO_OUTCOME_TEXT[outcome]}"
 
 
+RPS_MOVES = ("rock", "paper", "scissors")
+# What each move beats, standard rules: rock > scissors > paper > rock.
+_RPS_BEATS = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
+RPS_EMOJI = {"rock": "🪨", "paper": "📄", "scissors": "✂️"}
+
+
+def bot_move(rng: random.Random | None = None) -> str:
+    """Draw the bot's counter-move uniformly at random from RPS_MOVES."""
+    rng = rng or random.Random()
+    return rng.choice(RPS_MOVES)
+
+
+def rps_outcome(player: str, bot: str) -> str:
+    """Classify a round from the player's perspective: 'win', 'loss', or 'tie'.
+
+    Raises ValueError naming the valid moves if either move isn't one of
+    RPS_MOVES — reachable only when the handler is invoked directly, since the
+    Discord UI's choice parameter can't offer anything else.
+    """
+    if player not in RPS_MOVES or bot not in RPS_MOVES:
+        raise ValueError(
+            f"that's not a move I know — pick one of: {', '.join(RPS_MOVES)}"
+        )
+    if player == bot:
+        return "tie"
+    if _RPS_BEATS[player] == bot:
+        return "win"
+    return "loss"
+
+
+_RPS_OUTCOME_TEXT = {"win": "you win!", "loss": "you lose!", "tie": "tie!"}
+
+
+def format_rps_reply(player: str, bot: str) -> str:
+    """Render both moves' emoji and the outcome: ``🪨 vs ✂️ — you win!``."""
+    outcome = rps_outcome(player, bot)
+    return f"{RPS_EMOJI[player]} vs {RPS_EMOJI[bot]} — {_RPS_OUTCOME_TEXT[outcome]}"
+
+
 @app_commands.command(description="Round-trip latency check.")
 async def ping(interaction: discord.Interaction) -> None:
     latency_ms = round(interaction.client.latency * 1000)
@@ -191,9 +231,22 @@ async def casino(interaction: discord.Interaction) -> None:
     await interaction.response.send_message(format_casino_reply(reels))
 
 
+@app_commands.command(description="Rock-paper-scissors against the bot.")
+async def rps(
+    interaction: discord.Interaction, move: Literal["rock", "paper", "scissors"]
+) -> None:
+    try:
+        reply = format_rps_reply(move, bot_move())
+    except ValueError as exc:
+        await interaction.response.send_message(str(exc), ephemeral=True)
+        return
+    await interaction.response.send_message(reply)
+
+
 def register(tree: app_commands.CommandTree) -> None:
     tree.add_command(ping)
     tree.add_command(roll)
     tree.add_command(choose)
     tree.add_command(coinflip)
     tree.add_command(casino)
+    tree.add_command(rps)
