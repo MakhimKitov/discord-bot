@@ -29,8 +29,9 @@ delivery, and CI deploys on human merge.
 
 ## Review
 
-Every change is reviewed before merge: you self-review with **Codex** before opening the
-PR, **GitHub Copilot** reviews the opened PR, and the **human owner** gives the final
+Every change is reviewed before merge: **re-read your full diff before opening the PR**,
+the **platform arranges machine review** on the opened PR (which reviewers exist is the
+platform's configuration, not yours to assume), and the **human owner** gives the final
 approval and merge. Never merge your own work.
 
 **Triage every review finding** into exactly one of:
@@ -58,12 +59,14 @@ If a review finding shows a scope boundary was wrong (e.g. an out-of-scope path 
 actually affected), that is a **spec change**: say so in-thread and on the issue —
 never silently cross a scope boundary or a forbidden change.
 
-After pushing changes to an open PR (a review round), **re-request review from Copilot**;
-include the owner only when the round addressed the owner's own review — Copilot-round
-fixes shouldn't ping the human (automatic reviews fire only on PR open, not on pushes):
+After pushing changes to an open PR (a review round), the **platform re-requests machine
+review automatically — never request it yourself** (your bot token can't: GitHub silently
+drops such requests with a 201 that does nothing). Re-request the owner, and only when
+the round addressed the owner's own review — machine-review rounds shouldn't ping the
+human:
 
     gh api repos/{owner}/{repo}/pulls/<n>/requested_reviewers \
-      -X POST -F 'reviewers[]=copilot-pull-request-reviewer[bot]' [-F 'reviewers[]=<owner>']
+      -X POST -F 'reviewers[]=<owner>'
 
 Cap the fix → re-review loop at **3 rounds**; if blocking findings remain, stop and
 escalate to the human with a summary of what's outstanding instead of cycling.
