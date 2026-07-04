@@ -15,4 +15,15 @@ def test_all_commands_registered():
         "choose",
         "coinflip",
         "casino",
+        "rps",
     }
+
+
+def test_rps_move_parameter_offers_exactly_three_choices():
+    """FR-1: the 'move' parameter is a fixed three-choice picker, no free text."""
+    client = discord.Client(intents=discord.Intents.default())
+    tree = app_commands.CommandTree(client)
+    register_all(tree)
+    move_param = next(p for p in tree.get_command("rps").parameters if p.name == "move")
+    assert move_param.required
+    assert {choice.value for choice in move_param.choices} == {"rock", "paper", "scissors"}
