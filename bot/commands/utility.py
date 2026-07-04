@@ -1,8 +1,8 @@
 """Utility slash commands: /ping, /roll, /choose, /coinflip, /casino.
 
-Command logic lives in pure functions (parse_dice, roll_dice, pick, flip_coin,
-spin_reels) so it is unit-testable without a Discord connection; the decorated
-coroutines are thin interaction wrappers.
+Command logic lives in pure functions (parse_dice, roll_dice, parse_weighted_option,
+pick, flip_coin, spin_reels) so it is unit-testable without a Discord connection; the
+decorated coroutines are thin interaction wrappers.
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ from discord import app_commands
 
 MAX_COUNT = 20
 MAX_SIDES = 1000
+MIN_WEIGHT = 1
+MAX_WEIGHT = 100
 
 _DICE_RE = re.compile(r"(\d+)d(\d+)", re.IGNORECASE)
 
@@ -64,13 +66,45 @@ def format_roll_reply(count: int, sides: int, rolls: list[int]) -> str:
     return f"🎲 {count}d{sides} → {detail} = {sum(rolls)}"
 
 
+def parse_weighted_option(entry: str) -> tuple[str, int]:
+    """Split one ``/choose`` option on its *last* colon to find an optional
+    trailing integer weight.
+
+    If everything after the last colon is pure digits (whitespace-tolerant),
+    it's a weight and must resolve to ``MIN_WEIGHT``–``MAX_WEIGHT`` with
+    non-empty option text on the left; otherwise the colon is just literal
+    text (``red:ish``, ``pizza:2.5``) and the option defaults to weight 1.
+    """
+    text, sep, suffix = entry.rpartition(":")
+    stripped_suffix = suffix.strip()
+    if sep and stripped_suffix.isascii() and stripped_suffix.isdigit():
+        option, weight = text.strip(), int(stripped_suffix)
+        if not option:
+            raise ValueError(
+                f"a weight needs option text — use option:N, like pizza:3 "
+                f"(N is {MIN_WEIGHT}–{MAX_WEIGHT})"
+            )
+        if not MIN_WEIGHT <= weight <= MAX_WEIGHT:
+            raise ValueError(
+                f"weight must be {MIN_WEIGHT}–{MAX_WEIGHT} (got {weight}) — "
+                f"use option:N, like pizza:3"
+            )
+        return option, weight
+    return entry, 1
+
+
 def pick(options: str, rng: random.Random | None = None) -> str:
-    """Pick one entry from a comma-separated list."""
+    """Pick one entry from a comma-separated list, honoring an optional
+    trailing ``:N`` weight per option (default weight 1 when omitted)."""
     entries = [entry.strip() for entry in options.split(",") if entry.strip()]
     if not entries:
         raise ValueError("give me options, comma-separated: red, green, blue")
+    parsed = [parse_weighted_option(entry) for entry in entries]
     rng = rng or random.Random()
-    return rng.choice(entries)
+    return rng.choices(
+        [option for option, _ in parsed],
+        weights=[weight for _, weight in parsed],
+    )[0]
 
 
 def flip_coin(rng: random.Random | None = None) -> str:
@@ -130,7 +164,9 @@ async def roll(interaction: discord.Interaction, dice: str = "1d6") -> None:
     await interaction.response.send_message(format_roll_reply(count, sides, rolls))
 
 
-@app_commands.command(description="Pick one option from a comma-separated list.")
+@app_commands.command(
+    description="Pick one option from a comma-separated list; add :N to weight one."
+)
 async def choose(interaction: discord.Interaction, options: str) -> None:
     try:
         choice = pick(options)
