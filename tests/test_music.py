@@ -21,6 +21,7 @@ from bot.commands.music import (
     is_playlist_only_url,
     play,
     resolve_track,
+    stop,
 )
 
 
@@ -315,23 +316,7 @@ def test_after_playback_clears_manual_stop_flag_even_on_error(monkeypatch):
     assert 9 not in music._manual_stops
 
 
-def test_play_success_reply_matches_pinned_emoji_exactly():
-    """specs/bot/commands.md pins '▶️ Now playing **<title>**' — U+25B6 U+FE0F
-    (colored triangle emoji), not the bare U+25B6 text-presentation glyph.
-    Building the exact reply fragment here so a future edit that drops the
-    variation selector fails loudly instead of silently reading fine as
-    plain text in an editor."""
-    reply = f"\N{BLACK RIGHT-POINTING TRIANGLE}\N{VARIATION SELECTOR-16} Now playing **T**"
-    assert reply == "▶️ Now playing **T**"
-
-
-def test_stop_reply_matches_pinned_emoji_exactly():
-    """specs/bot/commands.md pins '⏹️ Stopped.' — U+23F9 U+FE0F."""
-    reply = "\N{BLACK SQUARE FOR STOP}\N{VARIATION SELECTOR-16} Stopped."
-    assert reply == "⏹️ Stopped."
-
-
-# --- /play concurrency (TOCTOU) regression -----------------------------------
+# --- /play concurrency (TOCTOU) regression, and reply-format regressions ----
 #
 # play() is normally integration surface (see module docstring) left to the
 # platform's E2E tester, but the race below is specifically about *await
@@ -476,3 +461,67 @@ def test_play_rejects_concurrent_call_during_resolve_join_window(monkeypatch):
     assert guild.voice_client.is_playing()
     assert any("Now playing" in content for content, _ in interaction1.followup.messages)
     assert music._starting == set()
+
+
+def test_play_success_reply_matches_pinned_format(monkeypatch):
+    """specs/bot/commands.md pins '▶️ Now playing **<title>**' — U+25B6 U+FE0F,
+    the colored triangle emoji, not the bare U+25B6 text-presentation glyph.
+
+    Drives the real play() coroutine end to end against the fake Discord
+    object graph above (resolve_track/build_audio_source stubbed only to
+    avoid real network/ffmpeg) and asserts on the actual message play()
+    sent — unlike an earlier version of this test that built the expected
+    string from the same \\N{...} escapes inline and compared it to itself,
+    which would pass even if music.py's own reply diverged from the pinned
+    format, since it never invoked play() at all.
+    """
+    monkeypatch.setattr(
+        music,
+        "resolve_track",
+        lambda query: music.ResolvedTrack(
+            title="Test Track", stream_url="https://x/y", webpage_url="https://x/y"
+        ),
+    )
+    monkeypatch.setattr(music, "build_audio_source", lambda url: object())
+
+    async def scenario():
+        guild = _FakeGuild(101)
+        channel = _FakeChannel(1010, guild)
+        interaction = _FakeInteraction(guild, channel, loop)
+        await play.callback(interaction, "some query")
+        music._cancel_idle_watch(guild.id)  # the 300s idle-watch task would otherwise outlive the test
+        return interaction
+
+    loop = asyncio.new_event_loop()
+    try:
+        interaction = loop.run_until_complete(scenario())
+    finally:
+        loop.close()
+
+    assert interaction.followup.messages == [("▶️ Now playing **Test Track**", False)]
+
+
+def test_stop_success_reply_matches_pinned_format():
+    """specs/bot/commands.md pins '⏹️ Stopped.' — U+23F9 U+FE0F. Drives the
+    real stop() coroutine against an already-connected, already-playing fake
+    voice client (see test_play_success_reply_matches_pinned_format's
+    docstring for why this must invoke the real code, not re-derive the
+    expected string)."""
+
+    async def scenario():
+        guild = _FakeGuild(102)
+        channel = _FakeChannel(1020, guild)
+        vc = _FakeVoiceClient(channel)
+        vc._playing = True
+        guild.voice_client = vc
+        interaction = _FakeInteraction(guild, channel, loop)
+        await stop.callback(interaction)
+        return interaction
+
+    loop = asyncio.new_event_loop()
+    try:
+        interaction = loop.run_until_complete(scenario())
+    finally:
+        loop.close()
+
+    assert interaction.response.messages == [("⏹️ Stopped.", False)]
