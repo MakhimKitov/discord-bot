@@ -37,11 +37,11 @@ bot means three layers, in order of value:
 
 1. **Registration** — with the bot online, list the guild's application commands via
    Discord REST (`GET /applications/{app_id}/guilds/{guild_id}/commands`, authorized
-   with the bot token). Every command the PRD promises must be registered with the
-   described signature; extras and gaps are defects.
+   with the bot token). Every command `specs/bot/commands.md` promises must be
+   registered with the described signature; extras and gaps are defects.
 2. **Handler invocation, in-process** — import the command callbacks from
    `bot/commands/` and invoke them against a stubbed `discord.Interaction`, asserting
-   the exact reply text/format the PRD specifies (including ephemeral flags on
+   the exact reply text/format `specs/bot/commands.md` pins (including ephemeral flags on
    rejections). This is the interaction surface the pure-function unit tests do not
    cover.
 3. **Liveness** — the bot process stays up across the above; a traceback in its log
@@ -49,8 +49,9 @@ bot means three layers, in order of value:
 
 ## Scenarios
 
-Invent them from `specs/bot/0001-prd.md` (the command list and reply formats are the
-contract), weighted toward whatever the PR under test changed. Happy path plus the
+Invent them from `specs/bot/commands.md` — the living command reference, the contract
+for the registered surface and reply formats — and the numbered specs it cites
+(`specs/bot/NNNN-*.md`, the owner's decision log), weighted toward whatever the PR under test changed. Happy path plus the
 rejection paths the PRD promises friendly messages for. Deterministic seams (injectable
 `rng`) are for unit tests — at this layer, assert format and bounds, not exact random
 outcomes.
@@ -58,9 +59,9 @@ outcomes.
 ## Pass / fail
 
 - Boot failure, missing/mismatched command registration, reply-format deviation from
-  the PRD, unfriendly rejection (raw traceback text reaching the user), or a crash in
+  the command reference, unfriendly rejection (raw traceback text reaching the user), or a crash in
   the bot's log → **defect**, with the scenario and reproduction steps.
-- Cosmetic wording differences the PRD does not pin → not a defect; note them in the
+- Cosmetic wording differences the command reference does not pin → not a defect; note them in the
   verdict prose if worth a human glance.
 
 ## Cleanup

@@ -22,7 +22,12 @@ delivery, and CI deploys on human merge.
 5. **Only work issues a human has approved** (the `ready` label).
 6. **Bugs:** reproduce → add a regression test → fix → run checks → open a PR that
    explains the cause, the fix, and the evidence.
-7. **Features:** update the spec in `specs/` → implement → test → document → open a PR.
+7. **Features:** the human-filed issue — and, for feature-scale work, the numbered
+   spec (`specs/bot/NNNN-*.md`) it references — is the authorization. Numbered specs
+   are the owner's append-only decision log: **never edit them.** Implement → test →
+   update the living docs to stay consistent (`specs/bot/commands.md` for any change
+   to the command surface, plus README / `TESTING.md` / runbooks as touched) → open
+   a PR.
 8. **Prefer small, reversible changes.** One issue per PR, linked to the issue.
 9. **Stop and mark the issue `blocked`** if production data, secrets, billing, or policy
    are involved — comment why.
