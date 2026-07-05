@@ -64,6 +64,78 @@ outcomes.
 - Cosmetic wording differences the command reference does not pin → not a defect; note them in the
   verdict prose if worth a human glance.
 
+## Voice E2E recipe (`/play` + `/stop`, spec 0002 slice 1)
+
+The sandbox has no ears — audible sound is out of scope. "E2E" here means the real
+path minus the speaker: real gateway session, real voice-channel connect, real
+yt-dlp resolution, a real ffmpeg child process, `voice_client.is_playing()` holding
+for ~10 s, a clean `/stop` disconnect, and no traceback in the bot's log. The guild
+needs at least one voice channel (operator guarantee) — create one if none exists.
+
+Drive the real command callbacks directly (`play.callback` / `stop.callback`, the
+coroutines the decorators wrap) against a small stub `discord.Interaction`, with the
+bot's own running `discord.Client` supplying the real guild/channel/voice objects.
+Run this as a second script *while the bot process from "Boot" above is running*,
+logged in with the same token (Discord allows multiple gateway sessions per bot):
+
+```python
+# save as e2e_voice.py, then: DISCORD_TOKEN=… GUILD_ID=… uv run python e2e_voice.py
+import asyncio, os
+import discord
+from bot.commands.music import play, stop
+
+class StubResponse:
+    async def defer(self): print("[stub] deferred")
+    async def send_message(self, content, ephemeral=False):
+        print(f"[stub] response.send_message(ephemeral={ephemeral}): {content}")
+
+class StubFollowup:
+    async def send(self, content, ephemeral=False):
+        print(f"[stub] followup.send(ephemeral={ephemeral}): {content}")
+
+class StubInteraction:
+    def __init__(self, client, guild, channel):
+        self.client, self.guild, self.guild_id = client, guild, guild.id
+        self.user = guild.me  # or any real Member currently sitting in `channel`
+        self.user.voice = type("V", (), {"channel": channel})()
+        self.response, self.followup = StubResponse(), StubFollowup()
+
+async def main():
+    client = discord.Client(intents=discord.Intents.default())
+    @client.event
+    async def on_ready():
+        guild = discord.utils.get(client.guilds, id=int(os.environ["GUILD_ID"]))
+        channel = next(c for c in guild.voice_channels)  # or a specific channel id
+        interaction = StubInteraction(client, guild, channel)
+
+        await play.callback(interaction, query="ytsearch1:royalty free test tone")
+        await asyncio.sleep(10)
+        vc = guild.voice_client
+        print("is_playing after ~10s:", vc.is_playing())  # expect True
+        assert vc.is_playing()
+
+        await stop.callback(interaction)
+        await asyncio.sleep(1)
+        print("voice_client after /stop:", guild.voice_client)  # expect None
+        assert guild.voice_client is None or not guild.voice_client.is_connected()
+
+        await client.close()
+    await client.start(os.environ["DISCORD_TOKEN"])
+
+asyncio.run(main())
+```
+
+Watch the bot process's own stdout while this runs — the lifecycle must be visible
+there per spec 0002: `resolving query=...`, `joined channel=...`, `playback started
+title=...`, `stopped by user` / `disconnected from guild=...`, and for the rejection
+paths, one `... rejected: ...` line per rejection. A traceback anywhere in that log
+during the run is a defect even if the script's own asserts passed.
+
+Rejection scenarios to also exercise (each should reply ephemeral, no traceback):
+not in a voice channel (`user.voice = None`), already playing (call `/play` again
+while the first is still going), and a bad query (e.g. a playlist URL, or a garbage
+URL that fails extraction).
+
 ## Cleanup
 
 Kill the bot process when done. Messages left in the test guild are fine — the guild

@@ -58,3 +58,23 @@ No parameters. Spins three reels drawn independently from the fixed symbol set
 reels plus exactly one outcome tier: **jackpot** (three of a kind), **small win**
 (exactly two of a kind), or **bust** (all different) *(exact wording not pinned)*.
 No bets, currency, balances, or per-user state. — 0001, #3, #5
+
+## `/play <query>`
+
+`query` is a YouTube URL or free-text search (first result). Joins the invoker's
+current voice channel and plays the single resolved video's audio; a pure playlist
+URL (`.../playlist?list=...`, no video id) is rejected rather than fanned out — a
+watch URL that also carries a `list=` param plays just that video, ignoring the
+list. Reply names the resolved title: `▶️ Now playing **<title>**`. Friendly
+ephemeral rejections, never tracebacks: invoker not in a voice channel, something
+already playing in the guild (no queue in slice 1 — `/play` rejects instead of
+enqueuing), or resolution/extraction failure (dead URL, no search results,
+geo/age-blocked, playlist link). Disconnects automatically when the track ends, or
+after **300 s (5 min)** connected with nothing playing — the bot never squats in a
+channel. — 0002, #17
+
+## `/stop`
+
+No parameters. Stops playback and disconnects from the voice channel. Reply:
+`⏹️ Stopped.`. Ephemeral rejection (`nothing's playing right now.`) when the bot
+isn't connected/playing in the guild. — 0002, #17

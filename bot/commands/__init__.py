@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from discord import app_commands
 
-from bot.commands import utility
+from bot.commands import music, utility
 
 
 def register_all(tree: app_commands.CommandTree) -> None:
     utility.register(tree)
+    music.register(tree)
