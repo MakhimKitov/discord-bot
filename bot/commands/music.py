@@ -206,6 +206,16 @@ async def _idle_watch(
     await asyncio.sleep(timeout)
     if voice_client.is_connected() and not voice_client.is_playing():
         log.info("idle timeout (%ss) in guild=%s, disconnecting", timeout, guild_id)
+        # Deregister ourselves *before* calling on_timeout (-> _disconnect ->
+        # _cancel_idle_watch): otherwise _cancel_idle_watch would find this
+        # very task still registered and cancel it — self-cancellation while
+        # running sets _must_cancel, so the next await inside _disconnect
+        # (voice_client.disconnect()) raises CancelledError mid-flight,
+        # skipping VoiceClient.cleanup() and the "disconnected" log line, and
+        # potentially cutting the outbound leave-voice-channel gateway update
+        # short — exactly the squatting failure mode this watchdog exists to
+        # prevent.
+        _idle_tasks.pop(guild_id, None)
         await on_timeout()
 
 

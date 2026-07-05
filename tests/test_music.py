@@ -175,6 +175,53 @@ def test_idle_watch_skips_disconnect_when_playing_resumed():
     assert fired == []
 
 
+def test_idle_timeout_disconnect_is_not_self_cancelled():
+    """Regression: _idle_watch's own on_timeout callback resolves to
+    _disconnect, whose first line is _cancel_idle_watch(guild_id) — if that
+    still finds *this same currently-running task* registered in
+    _idle_tasks, it cancels itself. Self-cancellation while running sets
+    _must_cancel, so the next await _disconnect hits (voice_client.disconnect())
+    raises CancelledError mid-flight, skipping cleanup and the "disconnected"
+    log line — the exact squatting failure mode the idle timeout exists to
+    prevent. Exercises the real _schedule_idle_watch/_idle_watch/_disconnect/
+    _cancel_idle_watch wiring (not a mock), with a fake voice client whose
+    disconnect() awaits internally so a mid-flight cancellation would land
+    squarely on it and be observable.
+    """
+
+    class FakeVoiceClient:
+        def __init__(self):
+            self._connected = True
+            self.cleaned_up = False
+
+        def is_connected(self):
+            return self._connected
+
+        def is_playing(self):
+            return False
+
+        async def disconnect(self, force=False):
+            await asyncio.sleep(0)  # stands in for discord.py's internal await
+            self._connected = False
+            self.cleaned_up = True  # stands in for VoiceClient.cleanup()
+
+    async def scenario():
+        vc = FakeVoiceClient()
+        guild_id = 55
+        music._schedule_idle_watch(
+            vc, guild_id, lambda: music._disconnect(vc, guild_id, "idle timeout"), timeout=0
+        )
+        task = music._idle_tasks[guild_id]
+        await task
+        return vc, task
+
+    vc, task = asyncio.run(scenario())
+    assert not task.cancelled()
+    assert vc.cleaned_up is True
+    assert not vc.is_connected()
+    assert 55 not in music._idle_tasks
+
+
 # _after_playback is the `after=` callback discord.py invokes unconditionally
 # whenever voice_client.play() stops — a natural end, a manual /stop, or a
 # mid-stream error alike (discord/player.py's AudioPlayer.run() `finally`
