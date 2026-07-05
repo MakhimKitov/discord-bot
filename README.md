@@ -12,6 +12,8 @@ human review. The operating contract for anyone (or anything) working here is
 | `/ping` | Round-trip latency check |
 | `/roll [dice]` | Roll dice in `NdM` notation (default `1d6`) |
 | `/choose <options>` | Pick one from a comma-separated list |
+| `/play <query>` | Play a YouTube video's audio (URL or search) in your voice channel |
+| `/stop` | Stop playback and leave the voice channel |
 
 The PRD lives in [`specs/bot/0001-prd.md`](specs/bot/0001-prd.md).
 

@@ -16,6 +16,8 @@ def test_all_commands_registered():
         "coinflip",
         "casino",
         "rps",
+        "play",
+        "stop",
     }
 
 
