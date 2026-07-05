@@ -27,7 +27,11 @@ delivery, and CI deploys on human merge.
    are the owner's append-only decision log: **never edit them.** Implement → test →
    update the living docs to stay consistent (`specs/bot/commands.md` for any change
    to the command surface, plus README / `TESTING.md` / runbooks as touched) → open
-   a PR.
+   a PR. A feature that adds an **external integration** must include one live
+   round-trip against the real service in the PR evidence (the leg reachable from
+   your environment, e.g. a bare extraction — no Discord needed) — or an explicit
+   statement of why it couldn't be verified and what that means for the feature's
+   premise.
 8. **Prefer small, reversible changes.** One issue per PR, linked to the issue.
 9. **Stop and mark the issue `blocked`** if production data, secrets, billing, or policy
    are involved — comment why.

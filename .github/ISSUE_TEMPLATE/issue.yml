@@ -69,6 +69,15 @@ body:
       label: Constraints & non-functionals
       description: Optional. Only what actually binds the work (performance, compatibility, security, …).
   - type: textarea
+    id: feasibility
+    attributes:
+      label: External dependencies & feasibility (owner-researched)
+      description: |
+        Required when the work integrates an external service. What does
+        production-grade use require *today* (auth, rate limits, anti-bot posture,
+        stability of the integration surface), and what posture does this issue take?
+        Premise risks die here or nowhere — downstream agents are bound to the spec.
+  - type: textarea
     id: assumptions
     attributes:
       label: Assumptions

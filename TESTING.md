@@ -61,6 +61,10 @@ outcomes.
 - Boot failure, missing/mismatched command registration, reply-format deviation from
   the command reference, unfriendly rejection (raw traceback text reaching the user), or a crash in
   the bot's log → **defect**, with the scenario and reproduction steps.
+- A feature's **primary external dependency failing** — even when the code turns it
+  into a graceful rejection — is a defect-grade finding and the **headline of your
+  verdict**, never an environmental footnote. A green scenario table must not bury
+  "the feature's core promise could not be verified."
 - Cosmetic wording differences the command reference does not pin → not a defect; note them in the
   verdict prose if worth a human glance.
 
@@ -142,6 +146,11 @@ Rejection scenarios to also exercise (each should reply ephemeral, no traceback)
 not in a voice channel (build the interaction with `StubMember(channel=None)`),
 already playing (call `/play` again while the first is still going), and a bad
 query (e.g. a playlist URL, or a garbage URL that fails extraction).
+
+YouTube may bot-wall this sandbox's IP ("Sign in to confirm you're not a bot"). If it
+does: still drive the happy path — use a direct audio URL (e.g. a SoundHelix MP3) so
+voice/ffmpeg/lifecycle get verified — **and report the wall as defect-grade** per
+Pass/fail: it means the feature's core promise (YouTube) went unverified.
 
 ## Cleanup
 
