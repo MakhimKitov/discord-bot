@@ -9,9 +9,11 @@ platform's E2E tester per TESTING.md, not here.
 import asyncio
 
 import pytest
+from bot.commands import music
 from bot.commands.music import (
     PLAYLIST_REJECTED_MESSAGE,
     ResolutionError,
+    _after_playback,
     _idle_watch,
     classify_query,
     is_playlist_only_url,
@@ -168,3 +170,96 @@ def test_idle_watch_skips_disconnect_when_playing_resumed():
 
     asyncio.run(_idle_watch(FakeVoiceClient(), guild_id=1, timeout=0, on_timeout=on_timeout))
     assert fired == []
+
+
+# _after_playback is the `after=` callback discord.py invokes unconditionally
+# whenever voice_client.play() stops — a natural end, a manual /stop, or a
+# mid-stream error alike (discord/player.py's AudioPlayer.run() `finally`
+# block calls it every time). These regression-test the three cases it must
+# tell apart, each via a monkeypatched _disconnect so no real voice client or
+# event loop plumbing is needed.
+
+
+@pytest.fixture(autouse=True)
+def _clean_manual_stops():
+    """_manual_stops is module-level state shared across guilds/tests."""
+    music._manual_stops.clear()
+    yield
+    music._manual_stops.clear()
+
+
+def test_after_playback_natural_end_disconnects_with_track_ended_reason(monkeypatch):
+    calls = []
+
+    async def fake_disconnect(voice_client, guild_id, reason):
+        calls.append((guild_id, reason))
+
+    monkeypatch.setattr(music, "_disconnect", fake_disconnect)
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        _after_playback(object(), 42, loop, None)
+        await asyncio.sleep(0)  # let the scheduled coroutine run
+
+    asyncio.run(scenario())
+    assert calls == [(42, "track ended")]
+
+
+def test_after_playback_error_disconnects_with_playback_error_reason(monkeypatch):
+    calls = []
+
+    async def fake_disconnect(voice_client, guild_id, reason):
+        calls.append((guild_id, reason))
+
+    monkeypatch.setattr(music, "_disconnect", fake_disconnect)
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        _after_playback(object(), 3, loop, RuntimeError("ffmpeg died"))
+        await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+    assert calls == [(3, "playback error")]
+
+
+def test_after_playback_manual_stop_does_not_reschedule_a_disconnect(monkeypatch):
+    """The exact bug the machine reviewer flagged: without the manual-stop
+    guard, a /stop-triggered after-callback would log "track ended" and fire
+    a second, redundant disconnect on top of the one /stop already did."""
+    calls = []
+
+    async def fake_disconnect(voice_client, guild_id, reason):
+        calls.append((guild_id, reason))
+
+    monkeypatch.setattr(music, "_disconnect", fake_disconnect)
+    music._manual_stops.add(7)
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        _after_playback(object(), 7, loop, None)
+        await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+    assert calls == []
+    assert 7 not in music._manual_stops  # consumed, not leaked
+
+
+def test_after_playback_clears_manual_stop_flag_even_on_error(monkeypatch):
+    """A stale /stop flag must not survive to mislabel the *next* track's
+    natural end as a no-op skip."""
+    calls = []
+
+    async def fake_disconnect(voice_client, guild_id, reason):
+        calls.append((guild_id, reason))
+
+    monkeypatch.setattr(music, "_disconnect", fake_disconnect)
+    music._manual_stops.add(9)
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        _after_playback(object(), 9, loop, RuntimeError("boom"))
+        await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+    assert calls == [(9, "playback error")]
+    assert 9 not in music._manual_stops

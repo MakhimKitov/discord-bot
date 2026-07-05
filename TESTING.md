@@ -93,11 +93,18 @@ class StubFollowup:
     async def send(self, content, ephemeral=False):
         print(f"[stub] followup.send(ephemeral={ephemeral}): {content}")
 
+class StubVoiceState:
+    def __init__(self, channel): self.channel = channel
+
+class StubMember:
+    """A plain stand-in, not a real discord.Member — Member.voice is a
+    read-only property with no setter, so it can't be poked directly."""
+    def __init__(self, channel): self.voice = StubVoiceState(channel)
+
 class StubInteraction:
     def __init__(self, client, guild, channel):
         self.client, self.guild, self.guild_id = client, guild, guild.id
-        self.user = guild.me  # or any real Member currently sitting in `channel`
-        self.user.voice = type("V", (), {"channel": channel})()
+        self.user = StubMember(channel)  # only .voice.channel is read by play()/stop()
         self.response, self.followup = StubResponse(), StubFollowup()
 
 async def main():
@@ -132,9 +139,9 @@ paths, one `... rejected: ...` line per rejection. A traceback anywhere in that 
 during the run is a defect even if the script's own asserts passed.
 
 Rejection scenarios to also exercise (each should reply ephemeral, no traceback):
-not in a voice channel (`user.voice = None`), already playing (call `/play` again
-while the first is still going), and a bad query (e.g. a playlist URL, or a garbage
-URL that fails extraction).
+not in a voice channel (build the interaction with `StubMember(channel=None)`),
+already playing (call `/play` again while the first is still going), and a bad
+query (e.g. a playlist URL, or a garbage URL that fails extraction).
 
 ## Cleanup
 

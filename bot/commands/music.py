@@ -13,6 +13,7 @@ second ``/play`` instead of enqueuing.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import os
 import stat
@@ -228,6 +229,48 @@ async def _disconnect(voice_client: discord.VoiceClient, guild_id: int, reason: 
     log.info("disconnected from guild=%s (%s)", guild_id, reason)
 
 
+# Guild ids for which /stop just called voice_client.stop() itself. discord.py's
+# AudioPlayer invokes the `after=` callback unconditionally in its run loop's
+# `finally` block — on a natural end, a mid-stream error, AND a manual .stop() —
+# so without this, a user-initiated /stop (or a playback error) would be
+# misreported by _after_playback as "track ended" and would fire a second,
+# redundant disconnect. /stop adds the guild id right before calling .stop();
+# _after_playback consumes (pops) it to tell the three cases apart.
+_manual_stops: set[int] = set()
+
+
+def _after_playback(
+    voice_client: discord.VoiceClient,
+    guild_id: int,
+    loop: asyncio.AbstractEventLoop,
+    error: Exception | None,
+) -> None:
+    """The ``after=`` callback for ``voice_client.play()``.
+
+    A standalone function (not a closure) so the three cases it must tell
+    apart — natural end, user-initiated /stop, mid-stream error — are
+    unit-testable without a real Discord connection. discord.py calls this
+    unconditionally from the audio player thread whenever playback stops for
+    *any* reason, so treating every call as "track ended" (as an earlier
+    version of this file did) misreports a /stop or an error in the logs and
+    fires a redundant disconnect.
+    """
+    manual_stop = guild_id in _manual_stops
+    _manual_stops.discard(guild_id)
+    if error:
+        log.warning("playback error in guild=%s: %s", guild_id, error)
+        reason = "playback error"
+    elif manual_stop:
+        # /stop already logged "stopped by user" and disconnected
+        # synchronously — this is that same stop's after-callback firing,
+        # not a natural end. Nothing left to do.
+        return
+    else:
+        log.info("track ended in guild=%s", guild_id)
+        reason = "track ended"
+    asyncio.run_coroutine_threadsafe(_disconnect(voice_client, guild_id, reason), loop)
+
+
 @app_commands.command(
     name="play", description="Play a YouTube video's audio in your voice channel (URL or search)."
 )
@@ -267,18 +310,12 @@ async def play(interaction: discord.Interaction, query: str) -> None:
         return
     log.info("joined channel=%s guild=%s", channel, guild.id)
 
-    def _after_playback(error: Exception | None) -> None:
-        if error:
-            log.warning("playback error in guild=%s: %s", guild.id, error)
-        else:
-            log.info("track ended in guild=%s", guild.id)
-        asyncio.run_coroutine_threadsafe(
-            _disconnect(voice_client, guild.id, "track ended"), interaction.client.loop
-        )
-
+    after_callback = functools.partial(
+        _after_playback, voice_client, guild.id, interaction.client.loop
+    )
     try:
         source = await asyncio.to_thread(build_audio_source, track.stream_url)
-        voice_client.play(source, after=_after_playback)
+        voice_client.play(source, after=after_callback)
     except Exception as exc:
         log.warning("playback failed to start in guild=%s: %s", guild.id, exc)
         await _disconnect(voice_client, guild.id, "playback failed to start")
@@ -301,6 +338,7 @@ async def stop(interaction: discord.Interaction) -> None:
         await interaction.response.send_message(NOTHING_PLAYING_MESSAGE, ephemeral=True)
         return
 
+    _manual_stops.add(guild.id)
     voice_client.stop()
     await _disconnect(voice_client, guild.id, "stopped by user")
     await interaction.response.send_message("\N{BLACK SQUARE FOR STOP} Stopped.")
