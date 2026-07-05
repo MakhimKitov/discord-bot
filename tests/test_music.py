@@ -7,16 +7,19 @@ platform's E2E tester per TESTING.md, not here.
 """
 
 import asyncio
+import time
 
 import pytest
 from bot.commands import music
 from bot.commands.music import (
+    ALREADY_PLAYING_MESSAGE,
     PLAYLIST_REJECTED_MESSAGE,
     ResolutionError,
     _after_playback,
     _idle_watch,
     classify_query,
     is_playlist_only_url,
+    play,
     resolve_track,
 )
 
@@ -263,3 +266,166 @@ def test_after_playback_clears_manual_stop_flag_even_on_error(monkeypatch):
     asyncio.run(scenario())
     assert calls == [(9, "playback error")]
     assert 9 not in music._manual_stops
+
+
+def test_play_success_reply_matches_pinned_emoji_exactly():
+    """specs/bot/commands.md pins '▶️ Now playing **<title>**' — U+25B6 U+FE0F
+    (colored triangle emoji), not the bare U+25B6 text-presentation glyph.
+    Building the exact reply fragment here so a future edit that drops the
+    variation selector fails loudly instead of silently reading fine as
+    plain text in an editor."""
+    reply = f"\N{BLACK RIGHT-POINTING TRIANGLE}\N{VARIATION SELECTOR-16} Now playing **T**"
+    assert reply == "▶️ Now playing **T**"
+
+
+def test_stop_reply_matches_pinned_emoji_exactly():
+    """specs/bot/commands.md pins '⏹️ Stopped.' — U+23F9 U+FE0F."""
+    reply = "\N{BLACK SQUARE FOR STOP}\N{VARIATION SELECTOR-16} Stopped."
+    assert reply == "⏹️ Stopped."
+
+
+# --- /play concurrency (TOCTOU) regression -----------------------------------
+#
+# play() is normally integration surface (see module docstring) left to the
+# platform's E2E tester, but the race below is specifically about *await
+# timing inside play() itself*, which no amount of pure-function testing can
+# exercise — so this one test drives the real command coroutine end to end
+# against a minimal fake Discord object graph, with resolve_track/
+# build_audio_source stubbed out to control the timing precisely.
+
+
+class _FakeVoiceClient:
+    def __init__(self, channel):
+        self.channel = channel
+        self._playing = False
+        self._connected = True
+
+    def is_playing(self):
+        return self._playing
+
+    def is_connected(self):
+        return self._connected
+
+    def play(self, source, after=None):
+        if self._playing:
+            raise RuntimeError("Already playing audio.")
+        self._playing = True
+
+    def stop(self):
+        self._playing = False
+
+    async def disconnect(self, force=False):
+        self._connected = False
+
+    async def move_to(self, channel):
+        self.channel = channel
+
+
+class _FakeGuild:
+    def __init__(self, guild_id):
+        self.id = guild_id
+        self.voice_client = None
+
+
+class _FakeChannel:
+    def __init__(self, channel_id, guild):
+        self.id = channel_id
+        self.guild = guild
+
+    async def connect(self):
+        vc = _FakeVoiceClient(self)
+        self.guild.voice_client = vc
+        return vc
+
+
+class _FakeVoiceState:
+    def __init__(self, channel):
+        self.channel = channel
+
+
+class _FakeMember:
+    def __init__(self, channel):
+        self.voice = _FakeVoiceState(channel)
+
+
+class _FakeResponse:
+    def __init__(self):
+        self.messages = []
+
+    async def defer(self):
+        pass
+
+    async def send_message(self, content, ephemeral=False):
+        self.messages.append((content, ephemeral))
+
+
+class _FakeFollowup:
+    def __init__(self):
+        self.messages = []
+
+    async def send(self, content, ephemeral=False):
+        self.messages.append((content, ephemeral))
+
+
+class _FakeInteraction:
+    def __init__(self, guild, channel, loop):
+        self.guild = guild
+        self.guild_id = guild.id
+        self.user = _FakeMember(channel)
+        self.response = _FakeResponse()
+        self.followup = _FakeFollowup()
+        self.client = type("C", (), {"loop": loop})()
+
+
+def test_play_rejects_concurrent_call_during_resolve_join_window(monkeypatch):
+    """The exact race the machine reviewer flagged: two /play calls both pass
+    the is_playing() guard (nothing playing yet), then one is held up inside
+    resolve_track's await. Without the _starting marker, the second call
+    would also pass the guard, and whichever reaches voice_client.play()
+    second would raise "Already playing audio." and tear down the other's
+    just-started session. With the marker, the second call is rejected
+    immediately instead of racing."""
+    music._starting.clear()
+    resolve_entered = asyncio.Event()
+    release_resolve = asyncio.Event()
+
+    def fake_resolve_track(query):
+        # Runs on a worker thread via asyncio.to_thread; loop.call_soon_threadsafe
+        # is the safe way to flip an asyncio.Event from off-loop code.
+        loop.call_soon_threadsafe(resolve_entered.set)
+        while not release_resolve.is_set():
+            time.sleep(0.001)
+        return music.ResolvedTrack(title="Track", stream_url="https://x/y", webpage_url="https://x/y")
+
+    monkeypatch.setattr(music, "resolve_track", fake_resolve_track)
+    monkeypatch.setattr(music, "build_audio_source", lambda url: object())
+
+    async def scenario():
+        guild = _FakeGuild(1)
+        channel = _FakeChannel(10, guild)
+        interaction1 = _FakeInteraction(guild, channel, loop)
+        interaction2 = _FakeInteraction(guild, channel, loop)
+
+        task1 = asyncio.ensure_future(play.callback(interaction1, "song a"))
+        await asyncio.wait_for(resolve_entered.wait(), timeout=2)
+
+        # interaction1 is now inside the resolve window, holding the
+        # _starting marker for this guild — interaction2 must be rejected
+        # immediately, without ever calling resolve_track/build_audio_source.
+        await play.callback(interaction2, "song b")
+
+        release_resolve.set()
+        await asyncio.wait_for(task1, timeout=2)
+        music._cancel_idle_watch(guild.id)  # the 300s idle-watch task would otherwise outlive the test
+        return interaction1, interaction2, guild
+
+    loop = asyncio.new_event_loop()
+    try:
+        interaction1, interaction2, guild = loop.run_until_complete(scenario())
+    finally:
+        loop.close()
+
+    assert interaction2.response.messages == [(ALREADY_PLAYING_MESSAGE, True)]
+    assert guild.voice_client.is_playing()
+    assert any("Now playing" in content for content, _ in interaction1.followup.messages)
+    assert music._starting == set()

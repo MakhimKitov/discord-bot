@@ -229,6 +229,21 @@ async def _disconnect(voice_client: discord.VoiceClient, guild_id: int, reason: 
     log.info("disconnected from guild=%s (%s)", guild_id, reason)
 
 
+# Guild ids for which /play has passed the "already playing" guard and is
+# resolving/joining/building the audio source but hasn't reached
+# voice_client.play() yet. Without this, the guard's is_playing() read is a
+# point-in-time check with two awaits (resolve_track's network call,
+# build_audio_source spawning ffmpeg) between it and voice_client.play() —
+# a second concurrent /play can read the same not-yet-playing state and race
+# past the guard too. Whichever call reaches voice_client.play() second then
+# raises "Already playing audio.", which the generic except around that call
+# catches and tears down the *shared* guild voice_client — killing whichever
+# request actually started, for an unrelated user. /play adds its guild id
+# here immediately after the guard (no await in between, so no other task
+# can interleave) and removes it in a finally covering the rest of the
+# command, closing the window.
+_starting: set[int] = set()
+
 # Guild ids for which /stop just called voice_client.stop() itself. discord.py's
 # AudioPlayer invokes the `after=` callback unconditionally in its run loop's
 # `finally` block — on a natural end, a mid-stream error, AND a manual .stop() —
@@ -285,48 +300,58 @@ async def play(interaction: discord.Interaction, query: str) -> None:
         return
 
     voice_client = guild.voice_client
-    if voice_client is not None and voice_client.is_playing():
+    if (voice_client is not None and voice_client.is_playing()) or guild.id in _starting:
         log.info("play rejected: already playing in guild=%s", guild.id)
         await interaction.response.send_message(ALREADY_PLAYING_MESSAGE, ephemeral=True)
         return
 
-    await interaction.response.defer()
-    log.info("resolving query=%r for guild=%s", query, guild.id)
+    # No await between the guard above and this line — marking the guild
+    # "starting" is atomic with the check from any other task's point of view.
+    _starting.add(guild.id)
     try:
-        track = await asyncio.to_thread(resolve_track, query)
-    except ResolutionError as exc:
-        log.info("resolution rejected query=%r: %s", query, exc)
-        await interaction.followup.send(str(exc), ephemeral=True)
-        return
+        await interaction.response.defer()
+        log.info("resolving query=%r for guild=%s", query, guild.id)
+        try:
+            track = await asyncio.to_thread(resolve_track, query)
+        except ResolutionError as exc:
+            log.info("resolution rejected query=%r: %s", query, exc)
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
 
-    try:
-        if voice_client is None or not voice_client.is_connected():
-            voice_client = await channel.connect()
-        elif voice_client.channel.id != channel.id:
-            await voice_client.move_to(channel)
-    except (discord.ClientException, asyncio.TimeoutError) as exc:
-        log.warning("join failed for guild=%s channel=%s: %s", guild.id, channel, exc)
-        await interaction.followup.send(JOIN_FAILED_MESSAGE, ephemeral=True)
-        return
-    log.info("joined channel=%s guild=%s", channel, guild.id)
+        try:
+            if voice_client is None or not voice_client.is_connected():
+                voice_client = await channel.connect()
+            elif voice_client.channel.id != channel.id:
+                await voice_client.move_to(channel)
+        except (discord.ClientException, asyncio.TimeoutError) as exc:
+            log.warning("join failed for guild=%s channel=%s: %s", guild.id, channel, exc)
+            await interaction.followup.send(JOIN_FAILED_MESSAGE, ephemeral=True)
+            return
+        log.info("joined channel=%s guild=%s", channel, guild.id)
 
-    after_callback = functools.partial(
-        _after_playback, voice_client, guild.id, interaction.client.loop
-    )
-    try:
-        source = await asyncio.to_thread(build_audio_source, track.stream_url)
-        voice_client.play(source, after=after_callback)
-    except Exception as exc:
-        log.warning("playback failed to start in guild=%s: %s", guild.id, exc)
-        await _disconnect(voice_client, guild.id, "playback failed to start")
-        await interaction.followup.send("couldn't start playback for that — try again.", ephemeral=True)
-        return
+        after_callback = functools.partial(
+            _after_playback, voice_client, guild.id, interaction.client.loop
+        )
+        try:
+            source = await asyncio.to_thread(build_audio_source, track.stream_url)
+            voice_client.play(source, after=after_callback)
+        except Exception as exc:
+            log.warning("playback failed to start in guild=%s: %s", guild.id, exc)
+            await _disconnect(voice_client, guild.id, "playback failed to start")
+            await interaction.followup.send(
+                "couldn't start playback for that — try again.", ephemeral=True
+            )
+            return
 
-    log.info("playback started title=%r guild=%s", track.title, guild.id)
-    _schedule_idle_watch(
-        voice_client, guild.id, lambda: _disconnect(voice_client, guild.id, "idle timeout")
-    )
-    await interaction.followup.send(f"\N{BLACK RIGHT-POINTING TRIANGLE} Now playing **{track.title}**")
+        log.info("playback started title=%r guild=%s", track.title, guild.id)
+        _schedule_idle_watch(
+            voice_client, guild.id, lambda: _disconnect(voice_client, guild.id, "idle timeout")
+        )
+        await interaction.followup.send(
+            f"\N{BLACK RIGHT-POINTING TRIANGLE}\N{VARIATION SELECTOR-16} Now playing **{track.title}**"
+        )
+    finally:
+        _starting.discard(guild.id)
 
 
 @app_commands.command(name="stop", description="Stop playback and leave the voice channel.")
@@ -341,7 +366,9 @@ async def stop(interaction: discord.Interaction) -> None:
     _manual_stops.add(guild.id)
     voice_client.stop()
     await _disconnect(voice_client, guild.id, "stopped by user")
-    await interaction.response.send_message("\N{BLACK SQUARE FOR STOP} Stopped.")
+    await interaction.response.send_message(
+        "\N{BLACK SQUARE FOR STOP}\N{VARIATION SELECTOR-16} Stopped."
+    )
 
 
 def register(tree: app_commands.CommandTree) -> None:
