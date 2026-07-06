@@ -442,6 +442,7 @@ name = "discord-bot"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "aiohttp" },
     { name = "discord-py", extra = ["voice"] },
     { name = "python-dotenv" },
     { name = "static-ffmpeg" },
@@ -455,6 +456,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.9" },
     { name = "discord-py", extras = ["voice"], specifier = ">=2.6" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "static-ffmpeg", specifier = ">=2.5" },
