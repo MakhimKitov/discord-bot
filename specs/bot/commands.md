@@ -78,3 +78,15 @@ channel. — 0002, #17
 No parameters. Stops playback and disconnects from the voice channel. Reply:
 `⏹️ Stopped.`. Ephemeral rejection (`nothing's playing right now.`) when the bot
 isn't connected/playing in the guild. — 0002, #17
+
+## `/lol`
+
+No parameters. Posts a single random funny image (meme) as a public reply, embedded
+so it renders inline rather than as a bare link. Fetches a batch from a public meme
+API (backed by mainstream SFW meme subreddits) and randomly picks one; any image the
+source flags `nsfw` or `spoiler` is dropped from consideration before picking, never
+posted. Deferred + followup (network fetch, short timeout) so the ~3 s ack window is
+never missed. If the source is unreachable, errors, times out, or the whole batch
+turns out unsafe, replies ephemeral: "couldn't grab a meme right now — try again in a
+bit." — never a traceback or a hang. No search terms, subreddit choice, captions, or
+per-guild config *(exact wording not pinned)*. — #21

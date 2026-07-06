@@ -14,6 +14,7 @@ human review. The operating contract for anyone (or anything) working here is
 | `/choose <options>` | Pick one from a comma-separated list |
 | `/play <query>` | Play a YouTube video's audio (URL or search) in your voice channel |
 | `/stop` | Stop playback and leave the voice channel |
+| `/lol` | Post a random funny image (meme) |
 
 The PRD lives in [`specs/bot/0001-prd.md`](specs/bot/0001-prd.md).
 

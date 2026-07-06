@@ -18,6 +18,7 @@ def test_all_commands_registered():
         "rps",
         "play",
         "stop",
+        "lol",
     }
 
 
