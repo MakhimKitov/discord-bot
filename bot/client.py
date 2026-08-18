@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import discord
 from discord import app_commands
@@ -18,6 +19,12 @@ class UtilityBot(discord.Client):
         super().__init__(intents=discord.Intents.default())
         self.config = config
         self.tree = app_commands.CommandTree(self)
+        # Captured once, here, not in on_ready: on_ready re-fires after a
+        # gateway resume (dropped connection, not a restart), and resetting
+        # the marker there would silently under-report uptime (issue #24,
+        # FR-2). A monotonic clock (issue #24, FR-3) so an NTP step or DST
+        # change can't move it backwards or jump it forwards.
+        self.started_monotonic = time.monotonic()
 
     async def setup_hook(self) -> None:
         register_all(self.tree)
