@@ -1,14 +1,15 @@
-"""Utility slash commands: /ping, /roll, /choose, /coinflip, /casino, /rps.
+"""Utility slash commands: /ping, /uptime, /roll, /choose, /coinflip, /casino, /rps.
 
 Command logic lives in pure functions (parse_dice, roll_dice, parse_weighted_option,
-pick, flip_coin, spin_reels, rps_outcome) so it is unit-testable without a Discord
-connection; the decorated coroutines are thin interaction wrappers.
+pick, flip_coin, spin_reels, rps_outcome, format_uptime_reply) so it is unit-testable
+without a Discord connection; the decorated coroutines are thin interaction wrappers.
 """
 
 from __future__ import annotations
 
 import random
 import re
+import time
 from collections import Counter
 from typing import Literal
 
@@ -193,6 +194,36 @@ async def ping(interaction: discord.Interaction) -> None:
     await interaction.response.send_message(f"Pong! `{latency_ms}ms`")
 
 
+_UPTIME_UNITS = (("d", 86400), ("h", 3600), ("m", 60), ("s", 1))
+
+
+def format_uptime(elapsed_seconds: float) -> str:
+    """Render elapsed seconds as ``d h m s``, per issue #24 FR-4: integer
+    seconds truncated (never rounded), every zero unit dropped, then only the
+    two most significant remaining units shown — e.g. ``1h 5s`` for
+    1h 0m 5s (the zero-valued minute is dropped, not just trailing zeros)."""
+    total = int(elapsed_seconds)
+    parts = []
+    for suffix, size in _UPTIME_UNITS:
+        value, total = divmod(total, size)
+        if value:
+            parts.append(f"{value}{suffix}")
+    if not parts:
+        return "0s"
+    return " ".join(parts[:2])
+
+
+def format_uptime_reply(elapsed_seconds: float) -> str:
+    """Render the full ``/uptime`` reply: ``⏱️ Up **3d 4h**``."""
+    return f"⏱️ Up **{format_uptime(elapsed_seconds)}**"
+
+
+@app_commands.command(description="How long the bot process has been running.")
+async def uptime(interaction: discord.Interaction) -> None:
+    elapsed = time.monotonic() - interaction.client.started_monotonic
+    await interaction.response.send_message(format_uptime_reply(elapsed))
+
+
 @app_commands.command(description="Roll dice in NdM notation (default 1d6).")
 async def roll(interaction: discord.Interaction, dice: str = "1d6") -> None:
     try:
@@ -245,6 +276,7 @@ async def rps(
 
 def register(tree: app_commands.CommandTree) -> None:
     tree.add_command(ping)
+    tree.add_command(uptime)
     tree.add_command(roll)
     tree.add_command(choose)
     tree.add_command(coinflip)

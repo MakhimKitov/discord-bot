@@ -10,6 +10,7 @@ human review. The operating contract for anyone (or anything) working here is
 | Command | What it does |
 |---|---|
 | `/ping` | Round-trip latency check |
+| `/uptime` | How long the bot process has been running |
 | `/roll [dice]` | Roll dice in `NdM` notation (default `1d6`) |
 | `/choose <options>` | Pick one from a comma-separated list |
 | `/play <query>` | Play a YouTube video's audio (URL or search) in your voice channel |

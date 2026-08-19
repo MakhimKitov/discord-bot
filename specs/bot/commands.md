@@ -19,6 +19,18 @@ deviations there are cosmetic, not defects.
 No parameters. Replies with the gateway latency in milliseconds *(exact format not
 pinned)*. — 0001
 
+## `/uptime`
+
+No parameters. Replies publicly with the elapsed time since the **bot process**
+started (not since the gateway last connected — a reconnect that re-fires
+`on_ready` does not reset it), measured from a monotonic clock so an NTP step or
+DST change can't move it. Rendered as integer seconds, truncated (never
+rounded up), dropping every zero unit (`d`/`h`/`m`/`s`) and showing only the two
+most significant remaining units: `⏱️ Up **3d 4h**`, `⏱️ Up **1h 5s**` (the
+zero-valued minute is dropped, not just the trailing zero), `⏱️ Up **0s**` right
+after a fresh start. No session/connection uptime, no restart history or count,
+no per-guild or per-user data. — #24
+
 ## `/roll [dice]`
 
 `dice` is optional plain-`NdM` notation; the `1d6` default applies only when the
