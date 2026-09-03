@@ -52,6 +52,12 @@ empty option text (`:3`) rejects the whole command with an ephemeral message nam
 the valid form and bounds. Reply: `I choose **pizza**` — the weight suffix never
 leaks. — 0001, #9
 
+## `/coinflip`
+
+No parameters. Flips a fair coin: `Heads` or `Tails`, each ~49.5%. Reply:
+`🪙 Heads!` / `🪙 Tails!`. A ~1% easter-egg third outcome replies
+`🤡 YOU WERE CLOWNED` instead. No streaks, bets, or per-user state. — #2
+
 ## `/rps <move>`
 
 `move` is required, exactly three Discord-UI choices (rock / paper / scissors — no
