@@ -53,6 +53,13 @@ def test_classify_query(query, expected):
         # is a sentinel, not a real video id, so this must still classify as
         # playlist-only rather than being treated as "has a specific video".
         "https://www.youtube.com/embed/videoseries?list=PLxyz",
+        # Issue #19 review round 2: a lookalike host whose label merely ends
+        # in "youtube.com" (e.g. "notyoutube.com") is NOT YouTube and must
+        # not get the path-video-id carve-out — a str.endswith substring
+        # check has no DNS-label boundary, so it would previously (wrongly)
+        # treat this as YouTube's /embed/ form and bypass the playlist
+        # rejection any other non-YouTube host with list=/no v= still gets.
+        "https://notyoutube.com/embed/dQw4w9WgXcQ?list=PLxyz",
     ],
 )
 def test_is_playlist_only_url_true_for_pure_playlist_links(url):
@@ -85,6 +92,10 @@ def test_is_playlist_only_url_false_otherwise(url):
         "https://www.youtube.com/embed/dQw4w9WgXcQ?list=PLxyz",
         "https://www.youtube.com/shorts/dQw4w9WgXcQ?list=PLxyz",
         "https://m.youtube.com/embed/dQw4w9WgXcQ?list=PLxyz",
+        # Issue #19 review round 2: a genuine YouTube subdomain must still
+        # get the path-video-id carve-out after tightening the host check
+        # from a bare substring `endswith` to an exact-or-subdomain match.
+        "https://music.youtube.com/embed/dQw4w9WgXcQ?list=PLxyz",
     ],
 )
 def test_is_playlist_only_url_false_for_path_embedded_video_id_with_list_param(url):

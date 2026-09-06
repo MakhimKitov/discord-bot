@@ -101,7 +101,8 @@ def _path_video_id(parsed) -> str | None:
         return None
     if host == "youtu.be":
         return segments[0]
-    if host.endswith("youtube.com") and len(segments) >= 2 and segments[0] in ("embed", "shorts", "v"):
+    is_youtube_host = host == "youtube.com" or host.endswith(".youtube.com")
+    if is_youtube_host and len(segments) >= 2 and segments[0] in ("embed", "shorts", "v"):
         video_id = segments[1]
         if segments[0] == "embed" and video_id == "videoseries":
             return None
