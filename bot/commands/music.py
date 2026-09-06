@@ -95,10 +95,15 @@ def _path_video_id(parsed) -> str | None:
     ``videoseries`` there is not a real video id, so it must NOT count as
     "has a specific video".
     """
-    host = parsed.netloc.lower().removeprefix("www.").removeprefix("m.")
     segments = [s for s in parsed.path.split("/") if s]
     if not segments:
         return None
+    # parsed.hostname (not parsed.netloc): netloc is the raw authority
+    # component and includes an explicit port or userinfo if present (e.g.
+    # "youtube.com:443"), which would fail both the exact-match and
+    # subdomain checks below and misclassify a valid single-video link as
+    # playlist-only. hostname is already lowercased and port/userinfo-free.
+    host = (parsed.hostname or "").removeprefix("www.").removeprefix("m.")
     if host == "youtu.be":
         return segments[0]
     is_youtube_host = host == "youtube.com" or host.endswith(".youtube.com")

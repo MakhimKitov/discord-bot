@@ -96,6 +96,11 @@ def test_is_playlist_only_url_false_otherwise(url):
         # get the path-video-id carve-out after tightening the host check
         # from a bare substring `endswith` to an exact-or-subdomain match.
         "https://music.youtube.com/embed/dQw4w9WgXcQ?list=PLxyz",
+        # Issue #19 review round 3: an explicit port must not defeat the
+        # host check — parsed.netloc includes it ("youtube.com:443"), which
+        # matched neither the exact-match nor subdomain check and wrongly
+        # rejected this valid single-video link as playlist-only.
+        "https://youtube.com:443/embed/dQw4w9WgXcQ?list=PLxyz",
     ],
 )
 def test_is_playlist_only_url_false_for_path_embedded_video_id_with_list_param(url):
