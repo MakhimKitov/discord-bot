@@ -48,6 +48,11 @@ def test_classify_query(query, expected):
         "https://www.youtube.com/playlist?list=PLxyz",
         "https://youtube.com/playlist?list=PLxyz",
         "https://www.youtube.com/playlist?list=PLxyz&index=1",
+        # Issue #19 review round 1: YouTube's own "Share > Embed" for a
+        # *playlist* (not a video) generates this exact shape — "videoseries"
+        # is a sentinel, not a real video id, so this must still classify as
+        # playlist-only rather than being treated as "has a specific video".
+        "https://www.youtube.com/embed/videoseries?list=PLxyz",
     ],
 )
 def test_is_playlist_only_url_true_for_pure_playlist_links(url):

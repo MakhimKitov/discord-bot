@@ -89,6 +89,11 @@ def _path_video_id(parsed) -> str | None:
     ``/v/<id>`` forms. None if the path carries no video id (e.g.
     ``/playlist``, a bare host, or an unrecognized shape) — the caller then
     knows the URL has no "specific video" from the path alone.
+
+    ``/embed/videoseries`` is YouTube's own sentinel for a *whole-playlist*
+    embed (what "Share > Embed" generates for a playlist, not a video) —
+    ``videoseries`` there is not a real video id, so it must NOT count as
+    "has a specific video".
     """
     host = parsed.netloc.lower().removeprefix("www.").removeprefix("m.")
     segments = [s for s in parsed.path.split("/") if s]
@@ -97,7 +102,10 @@ def _path_video_id(parsed) -> str | None:
     if host == "youtu.be":
         return segments[0]
     if host.endswith("youtube.com") and len(segments) >= 2 and segments[0] in ("embed", "shorts", "v"):
-        return segments[1]
+        video_id = segments[1]
+        if segments[0] == "embed" and video_id == "videoseries":
+            return None
+        return video_id
     return None
 
 
