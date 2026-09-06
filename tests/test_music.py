@@ -7,6 +7,7 @@ platform's E2E tester per TESTING.md, not here.
 """
 
 import asyncio
+import logging
 import time
 
 import pytest
@@ -64,6 +65,24 @@ def test_is_playlist_only_url_true_for_pure_playlist_links(url):
     ],
 )
 def test_is_playlist_only_url_false_otherwise(url):
+    assert is_playlist_only_url(url) is False
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # Issue #19: a video id embedded in the *path* (not the ?v= query
+        # param) alongside a list= playlist-context param must still count
+        # as "has a specific video", per the function's own documented
+        # contract and spec 0002 ("play the single video a watch-URL
+        # points at").
+        "https://youtu.be/dQw4w9WgXcQ?list=PLxyz",
+        "https://www.youtube.com/embed/dQw4w9WgXcQ?list=PLxyz",
+        "https://www.youtube.com/shorts/dQw4w9WgXcQ?list=PLxyz",
+        "https://m.youtube.com/embed/dQw4w9WgXcQ?list=PLxyz",
+    ],
+)
+def test_is_playlist_only_url_false_for_path_embedded_video_id_with_list_param(url):
     assert is_playlist_only_url(url) is False
 
 
@@ -293,6 +312,34 @@ def test_after_playback_manual_stop_does_not_reschedule_a_disconnect(monkeypatch
     asyncio.run(scenario())
     assert calls == []
     assert 7 not in music._manual_stops  # consumed, not leaked
+
+
+def test_after_playback_logs_disconnect_failure_instead_of_swallowing_it(monkeypatch, caplog):
+    """Issue #19 secondary finding: asyncio.run_coroutine_threadsafe returns a
+    concurrent.futures.Future, and unlike asyncio.Task, an unretrieved
+    exception on that Future is NOT logged on garbage collection — so a
+    _disconnect failure on the natural-end/error path would previously vanish
+    with no "disconnected" line and no error line either. _after_playback
+    must attach a done-callback that surfaces it.
+    """
+
+    async def failing_disconnect(voice_client, guild_id, reason):
+        raise RuntimeError("disconnect boom")
+
+    monkeypatch.setattr(music, "_disconnect", failing_disconnect)
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        with caplog.at_level(logging.ERROR, logger=music.log.name):
+            _after_playback(object(), 11, loop, None)
+            # Let the scheduled coroutine (and its done-callback) run.
+            for _ in range(10):
+                await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+    assert any(
+        "disconnect" in record.message and "11" in record.message for record in caplog.records
+    )
 
 
 def test_after_playback_clears_manual_stop_flag_even_on_error(monkeypatch):

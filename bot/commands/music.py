@@ -13,6 +13,7 @@ second ``/play`` instead of enqueuing.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import functools
 import logging
 import os
@@ -82,13 +83,34 @@ def classify_query(query: str) -> Literal["url", "search"]:
     return "search"
 
 
+def _path_video_id(parsed) -> str | None:
+    """Video id embedded in the URL *path*, if any: the ``youtu.be/<id>``
+    short-link form, or YouTube's ``/embed/<id>``, ``/shorts/<id>`` and
+    ``/v/<id>`` forms. None if the path carries no video id (e.g.
+    ``/playlist``, a bare host, or an unrecognized shape) — the caller then
+    knows the URL has no "specific video" from the path alone.
+    """
+    host = parsed.netloc.lower().removeprefix("www.").removeprefix("m.")
+    segments = [s for s in parsed.path.split("/") if s]
+    if not segments:
+        return None
+    if host == "youtu.be":
+        return segments[0]
+    if host.endswith("youtube.com") and len(segments) >= 2 and segments[0] in ("embed", "shorts", "v"):
+        return segments[1]
+    return None
+
+
 def is_playlist_only_url(query: str) -> bool:
     """True for a URL that names a playlist with no specific video — e.g.
     ``.../playlist?list=...`` — which slice 1 must reject rather than fan out.
 
     A watch URL that merely carries a playlist *context* alongside a video id
-    (``.../watch?v=X&list=Y``) is NOT playlist-only: yt-dlp's ``noplaylist``
-    option resolves that to the single video ``X``, per spec 0002.
+    is NOT playlist-only: yt-dlp's ``noplaylist`` option resolves that to the
+    single video, per spec 0002. That video id can arrive either as the ``v``
+    query param (``.../watch?v=X&list=Y``) or embedded in the path (e.g.
+    ``youtu.be/X?list=Y``, ``.../embed/X?list=Y``) — both count as "has a
+    specific video".
     """
     if classify_query(query) != "url":
         return False
@@ -96,7 +118,9 @@ def is_playlist_only_url(query: str) -> bool:
     if parsed.path.rstrip("/") == "/playlist":
         return True
     params = parse_qs(parsed.query)
-    return "list" in params and "v" not in params
+    if "list" not in params or "v" in params:
+        return False
+    return _path_video_id(parsed) is None
 
 
 def _default_extract(query: str) -> dict | None:
@@ -293,7 +317,22 @@ def _after_playback(
     else:
         log.info("track ended in guild=%s", guild_id)
         reason = "track ended"
-    asyncio.run_coroutine_threadsafe(_disconnect(voice_client, guild_id, reason), loop)
+    future = asyncio.run_coroutine_threadsafe(_disconnect(voice_client, guild_id, reason), loop)
+    future.add_done_callback(functools.partial(_log_disconnect_failure, guild_id))
+
+
+def _log_disconnect_failure(guild_id: int, future: concurrent.futures.Future) -> None:
+    """Done-callback for the ``_disconnect`` future scheduled by
+    ``_after_playback``. Unlike ``asyncio.Task``, a ``concurrent.futures.Future``
+    does not log an unretrieved exception on garbage collection — without
+    this, a ``_disconnect`` failure on the natural-track-end or
+    playback-error path would be silently swallowed: no "disconnected" log
+    line and no error log line either."""
+    if future.cancelled():
+        return
+    exc = future.exception()
+    if exc is not None:
+        log.error("post-playback disconnect failed in guild=%s: %s", guild_id, exc)
 
 
 @app_commands.command(
