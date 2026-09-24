@@ -7,6 +7,7 @@ platform's E2E tester per TESTING.md, not here.
 """
 
 import asyncio
+import logging
 import time
 
 import pytest
@@ -47,6 +48,18 @@ def test_classify_query(query, expected):
         "https://www.youtube.com/playlist?list=PLxyz",
         "https://youtube.com/playlist?list=PLxyz",
         "https://www.youtube.com/playlist?list=PLxyz&index=1",
+        # Issue #19 review round 1: YouTube's own "Share > Embed" for a
+        # *playlist* (not a video) generates this exact shape — "videoseries"
+        # is a sentinel, not a real video id, so this must still classify as
+        # playlist-only rather than being treated as "has a specific video".
+        "https://www.youtube.com/embed/videoseries?list=PLxyz",
+        # Issue #19 review round 2: a lookalike host whose label merely ends
+        # in "youtube.com" (e.g. "notyoutube.com") is NOT YouTube and must
+        # not get the path-video-id carve-out — a str.endswith substring
+        # check has no DNS-label boundary, so it would previously (wrongly)
+        # treat this as YouTube's /embed/ form and bypass the playlist
+        # rejection any other non-YouTube host with list=/no v= still gets.
+        "https://notyoutube.com/embed/dQw4w9WgXcQ?list=PLxyz",
     ],
 )
 def test_is_playlist_only_url_true_for_pure_playlist_links(url):
@@ -64,6 +77,33 @@ def test_is_playlist_only_url_true_for_pure_playlist_links(url):
     ],
 )
 def test_is_playlist_only_url_false_otherwise(url):
+    assert is_playlist_only_url(url) is False
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # Issue #19: a video id embedded in the *path* (not the ?v= query
+        # param) alongside a list= playlist-context param must still count
+        # as "has a specific video", per the function's own documented
+        # contract and spec 0002 ("play the single video a watch-URL
+        # points at").
+        "https://youtu.be/dQw4w9WgXcQ?list=PLxyz",
+        "https://www.youtube.com/embed/dQw4w9WgXcQ?list=PLxyz",
+        "https://www.youtube.com/shorts/dQw4w9WgXcQ?list=PLxyz",
+        "https://m.youtube.com/embed/dQw4w9WgXcQ?list=PLxyz",
+        # Issue #19 review round 2: a genuine YouTube subdomain must still
+        # get the path-video-id carve-out after tightening the host check
+        # from a bare substring `endswith` to an exact-or-subdomain match.
+        "https://music.youtube.com/embed/dQw4w9WgXcQ?list=PLxyz",
+        # Issue #19 review round 3: an explicit port must not defeat the
+        # host check — parsed.netloc includes it ("youtube.com:443"), which
+        # matched neither the exact-match nor subdomain check and wrongly
+        # rejected this valid single-video link as playlist-only.
+        "https://youtube.com:443/embed/dQw4w9WgXcQ?list=PLxyz",
+    ],
+)
+def test_is_playlist_only_url_false_for_path_embedded_video_id_with_list_param(url):
     assert is_playlist_only_url(url) is False
 
 
@@ -293,6 +333,34 @@ def test_after_playback_manual_stop_does_not_reschedule_a_disconnect(monkeypatch
     asyncio.run(scenario())
     assert calls == []
     assert 7 not in music._manual_stops  # consumed, not leaked
+
+
+def test_after_playback_logs_disconnect_failure_instead_of_swallowing_it(monkeypatch, caplog):
+    """Issue #19 secondary finding: asyncio.run_coroutine_threadsafe returns a
+    concurrent.futures.Future, and unlike asyncio.Task, an unretrieved
+    exception on that Future is NOT logged on garbage collection — so a
+    _disconnect failure on the natural-end/error path would previously vanish
+    with no "disconnected" line and no error line either. _after_playback
+    must attach a done-callback that surfaces it.
+    """
+
+    async def failing_disconnect(voice_client, guild_id, reason):
+        raise RuntimeError("disconnect boom")
+
+    monkeypatch.setattr(music, "_disconnect", failing_disconnect)
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        with caplog.at_level(logging.ERROR, logger=music.log.name):
+            _after_playback(object(), 11, loop, None)
+            # Let the scheduled coroutine (and its done-callback) run.
+            for _ in range(10):
+                await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+    assert any(
+        "disconnect" in record.message and "11" in record.message for record in caplog.records
+    )
 
 
 def test_after_playback_clears_manual_stop_flag_even_on_error(monkeypatch):
